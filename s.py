@@ -2,6 +2,7 @@
 import argparse
 import base64
 import io
+import logging
 import os
 import shutil
 import sys
@@ -13,6 +14,13 @@ if sys.version_info.major >= 3:
     from urllib.parse import urlparse, parse_qs
 else:
     raise SystemExit("Run via python3")
+
+
+log = logging.getLogger(__name__)
+sh = logging.StreamHandler()
+sh.setFormatter(logging.Formatter())
+log.addHandler(sh)
+log.setLevel(logging.INFO)
 
 
 UPLOAD_FORM = b'''
@@ -134,11 +142,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--port', type=int, default=8080)
     parser.add_argument('-b', '--bind-to', default='0.0.0.0')
+    parser.add_argument('-d', '--debug', action='store_true')
     args = parser.parse_args()
+
+    if args.debug:
+        log.setLevel(logging.DEBUG)
+        log.debug("Debug logging enabled")
 
     port = args.port
     ip = args.bind_to
     httpd = HTTPServer((ip, port), Handler)
+    print("[+] Server started, bound to {}:{}".format(ip, port))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
