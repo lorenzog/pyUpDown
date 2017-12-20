@@ -5,11 +5,12 @@ This server is designed to:
 
  1. Run with no dependencies apart from standard Python libraries.
  2. Return every file as text/plain.
+ 3. Return files encoded (e.g. `powershell -encodedCommand...`)
  3. Allow for file upload [TODO]
 
 Its purpose is to aid in exfiltrating data during a penetration test
 (TODO: use socat to run it over ssl?) and transfer scripts, commandlets
-and 
+and binary data.
 
 ## Quickstart
 
@@ -29,3 +30,7 @@ Then:
     $ curl 'http://localhost:8080/test.txt?key=123'
     WVdfXV05
 
+## TODO
+
+ * Finish POST
+ * Try it over socat for SSL
