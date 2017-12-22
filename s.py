@@ -10,7 +10,7 @@ import logging
 import os
 import shutil
 import sys
-from tempfile import TemporaryFile
+from tempfile import TemporaryFile, NamedTemporaryFile
 if sys.version_info.major >= 3:
     from http.server import SimpleHTTPRequestHandler, HTTPServer
     from http import HTTPStatus
@@ -150,6 +150,7 @@ class Handler(SimpleHTTPRequestHandler):
         except OSError:
             self.send_error(HTTPStatus.NOT_FOUND, "File not found")
 
+    # test with: curl http://localhost:8080/upload' -F upload=@test.txt
     def do_POST(self):
         print(self.headers)
         try:
@@ -161,6 +162,32 @@ class Handler(SimpleHTTPRequestHandler):
 
         # TODO if not found, bail out
         _ct = self.headers.get('content-type')
+        print("content-type: {}".format(_ct))
+        import re
+        _bound = dict(re.findall(r'(\S+)=(".*?"|\S+)', _ct))
+        print("boundary: {}".format(repr(_bound.get('boundary'))))
+        cgip = cgi.parse_header(_ct)
+        print("cgip: {}".format(cgip))
+        # mp = cgi.parse_multipart(self.rfile, cgip[1])
+        boundary_dict = {'boundary': bytes(cgip[1]['boundary'], 'ascii')}
+        tmp = NamedTemporaryFile(delete=False)
+        shutil.copyfileobj(self.rfile, tmp)
+        tmp.seek(0)
+        # mp = cgi.parse_multipart(self.rfile, boundary_dict)
+        mp = cgi.parse_multipart(tmp, boundary_dict)
+        print("Yea")
+        # mp = cgi.parse_multipart(self.rfile, _bound.get(str('boundary')))
+        # mp = cgi.parse_multipart(self.rfile, str(_ct))
+        # XXX
+        # trying to make sense of https://github.com/python/cpython/blob/3.6/Lib/cgi.py
+        print(dir(mp))
+        print(repr(mp))
+        print(mp.items())
+        self.send_response(301)
+        self.send_header('Location', '/')
+        self.end_headers()
+        return
+
         if _ct is not None:
             _ct = _ct[0]
 
