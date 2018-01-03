@@ -12,7 +12,7 @@ import shutil
 import sys
 from tempfile import TemporaryFile, NamedTemporaryFile
 if sys.version_info.major >= 3:
-    from http.server import SimpleHTTPRequestHandler, HTTPServer
+    from http.server import SimpleHTTPRequestHandler, HTTPServer, CGIHTTPRequestHandler
     from http import HTTPStatus
     from urllib.parse import urlparse, parse_qs
 else:
@@ -35,7 +35,7 @@ UPLOAD_FORM = b'''
 <h1>Upload new File</h1>
 <form method=post enctype=multipart/form-data> 
 <!-- <form method=post enctype=application/x-www-form-urlencoded> -->
-<p><input type=file name=file>
+<p><input type=file name=upload>
 <input type=submit value=Upload>
 </form>
 '''
@@ -57,7 +57,8 @@ def encode(key, what):
     return ''.join(encoded_chars)
 
 
-class Handler(SimpleHTTPRequestHandler):
+# class Handler(SimpleHTTPRequestHandler):
+class Handler(CGIHTTPRequestHandler):
     def do_GET(self):
         # get query and path
         try:
@@ -153,16 +154,7 @@ class Handler(SimpleHTTPRequestHandler):
     # test with: 
     # multipart/form-data: curl http://localhost:8080/upload' -F upload=@test.txt
     # application/x-www-form-urlencoded: curl http://localhost:8080/upload' -d @test.txt
-    # perhaps worth to make this a CGI? https://docs.python.org/3/library/http.server.html#http.server.CGIHTTPRequestHandler
     def do_POST(self):
-        print(self.headers)
-        try:
-            _len = int(self.headers.get('content-length', 0))
-        except ValueError:
-            log.error("Invalid length passed. Going with zero.")
-            _len = 0
-        print(self.rfile.read(int(_len)))
-
         # TODO if not found, bail out
         _ct = self.headers.get('content-type')
         print("content-type: {}".format(_ct))
@@ -174,9 +166,6 @@ class Handler(SimpleHTTPRequestHandler):
         # TODO if exists
         if cgip[0].lower() == 'application/x-www-form-urlencoded':
             print("Form urlencoded, do later")
-            self.send_response(200)
-            self.end_headers()
-            return
         elif cgip[0].lower() == 'multipart/form-data':
             print("Multipart form data")
         else:
@@ -212,13 +201,12 @@ class Handler(SimpleHTTPRequestHandler):
         # # figure it out later
         # if _ct is not None:
         #     _ct = _ct[0]
+        # print("XXX reading: {}".format(self.rfile.read()))
 
-        import os
-        _env = os.environ
-        _env['REQUEST_METHOD'] = self.command
         f = cgi.FieldStorage(
             fp=self.rfile, headers=self.headers,
-            environ=_env
+            environ={'REQUEST_METHOD': 'POST'}
+            # environ=_env
         )
 
         print(dir(f))
@@ -229,7 +217,13 @@ class Handler(SimpleHTTPRequestHandler):
         print("HEaders: {}".format(f.headers))
         print("Value: {}".format(f.value))
         print("len: {}".format(f.length))
-        print("Data: {}".format(f.read()))
+        # if it's multipart/form-data, it's a recursive upload.. CBA
+        print("qs: {}".format(f.qs_on_post))
+        print("Type: {}".format(f.type))
+        uploads = f.getlist('upload')
+        if len(uploads) > 0:
+            for u in uploads:
+                print("Upload: {}".format(repr(u)))
 
         # with open('/tmp/stuff', 'wb') as g:
         #     f.file.seek(0)
