@@ -8,11 +8,13 @@ from itertools import cycle
 from socketserver import ForkingMixIn
 import logging
 import os
+import random
 import shutil
+import string
 import sys
-from tempfile import TemporaryFile, NamedTemporaryFile
+import tempfile
 if sys.version_info.major >= 3:
-    from http.server import SimpleHTTPRequestHandler, HTTPServer, CGIHTTPRequestHandler
+    from http.server import SimpleHTTPRequestHandler, HTTPServer
     from http import HTTPStatus
     from urllib.parse import urlparse, parse_qs
 else:
@@ -33,7 +35,7 @@ UPLOAD_FORM = b'''
 <!doctype html>
 <title>Upload new File</title>
 <h1>Upload new File</h1>
-<form method=post enctype=multipart/form-data> 
+<form method=post enctype=multipart/form-data>
 <!-- <form method=post enctype=application/x-www-form-urlencoded> -->
 <p><input type=file name=upload>
 <input type=submit value=Upload>
@@ -44,7 +46,8 @@ UPLOAD_FORM = b'''
 def encode(key, what):
     # inspired by
     # https://dustri.org/b/elegant-xor-encryption-in-python.html
-    # encoded = b''.join(chr(ord(c) ^ ord(k)) for c, k in zip (what, cycle(key)))
+    # encoded = b''.join(
+    #   chr(ord(c) ^ ord(k)) for c, k in zip (what, cycle(key)))
     encoded_chars = []
     for c, k in zip(what, cycle(bytearray(key, 'utf-8'))):
         # both 'c' and 'k' are integers if the file is read with 'b'
@@ -53,12 +56,12 @@ def encode(key, what):
         xor = c ^ k
         # log.debug(chr(xor))
         encoded_chars.append(chr(xor))
-    log.debug("Encoded: {} {}".format(type(encoded_chars), repr(encoded_chars)))
+    log.debug("Encoded: {} {}".format(
+        type(encoded_chars), repr(encoded_chars)))
     return ''.join(encoded_chars)
 
 
-# class Handler(SimpleHTTPRequestHandler):
-class Handler(CGIHTTPRequestHandler):
+class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         # get query and path
         try:
@@ -111,7 +114,9 @@ class Handler(CGIHTTPRequestHandler):
             with open(what, 'rb') as f:
                 fs = os.fstat(f.fileno())
                 self.send_response(HTTPStatus.OK)
-                self.send_header("Last-Modified", self.date_time_string(fs.st_mtime))
+                self.send_header(
+                    "Last-Modified",
+                    self.date_time_string(fs.st_mtime))
                 # defaults to text/plain
                 self.send_header("Content-type", mime)
 
@@ -120,8 +125,7 @@ class Handler(CGIHTTPRequestHandler):
                     # TODO read in chunks and write to self.wfile?
                     encoded = encode(key, f.read())
                     encoded_b64 = base64.b64encode(bytearray(encoded, 'utf-8'))
-                    # log.debug("b64 {} len: {}".format(encoded_b64, len(encoded_b64)))
-                    tmp = TemporaryFile()
+                    tmp = tempfile.TemporaryFile()
                     tmp.write(encoded_b64)
                     self.send_header("Content-Length", str(len(encoded_b64)))
                     self.end_headers()
@@ -132,7 +136,7 @@ class Handler(CGIHTTPRequestHandler):
 
                 if b64 is True:
                     b64 = base64.b64encode(f.read())
-                    tmp = TemporaryFile()
+                    tmp = tempfile.TemporaryFile()
                     tmp.write(b64)
                     self.send_header("Content-Length", str(len(b64)))
                     # log.debug("b64 {} len: {}".format(b64, len(b64)))
@@ -151,104 +155,78 @@ class Handler(CGIHTTPRequestHandler):
         except OSError:
             self.send_error(HTTPStatus.NOT_FOUND, "File not found")
 
-    # test with: 
-    # multipart/form-data: curl http://localhost:8080/upload' -F upload=@test.txt
-    # application/x-www-form-urlencoded: curl http://localhost:8080/upload' -d @test.txt
     def do_POST(self):
-        # TODO if not found, bail out
-        _ct = self.headers.get('content-type')
-        print("content-type: {}".format(_ct))
-        import re
-        _bound = dict(re.findall(r'(\S+)=(".*?"|\S+)', _ct))
-        print("boundary: {}".format(repr(_bound.get('boundary'))))
-        cgip = cgi.parse_header(_ct)
-        print("cgip: {}".format(cgip))
-        # TODO if exists
-        if cgip[0].lower() == 'application/x-www-form-urlencoded':
-            print("Form urlencoded, do later")
-        elif cgip[0].lower() == 'multipart/form-data':
-            print("Multipart form data")
-        else:
-            print("Nope")
-            return
-
-        # TODO make into functions, yadda yadda
-
-        # # XXX tried to read from file directly, no luck
-        # # mp = cgi.parse_multipart(self.rfile, cgip[1])
-
-        # boundary_dict = {'boundary': bytes(cgip[1]['boundary'], 'ascii')}
-        # # trying with a temporary file?
-        # # XXX nope. locks before parse_multipart
-        # tmp = NamedTemporaryFile(delete=False)
-        # shutil.copyfileobj(self.rfile, tmp)
-        # tmp.seek(0)
-        # # mp = cgi.parse_multipart(self.rfile, boundary_dict)
-        # mp = cgi.parse_multipart(tmp, boundary_dict)
-        # print("Yea")
-        # # mp = cgi.parse_multipart(self.rfile, _bound.get(str('boundary')))
-        # # mp = cgi.parse_multipart(self.rfile, str(_ct))
-        # # XXX
-        # # trying to make sense of https://github.com/python/cpython/blob/3.6/Lib/cgi.py
-        # print(dir(mp))
-        # print(repr(mp))
-        # print(mp.items())
-        # self.send_response(301)
-        # self.send_header('Location', '/')
-        # self.end_headers()
-        # return
-
-        # # figure it out later
-        # if _ct is not None:
-        #     _ct = _ct[0]
-        # print("XXX reading: {}".format(self.rfile.read()))
-
         f = cgi.FieldStorage(
             fp=self.rfile, headers=self.headers,
+            # set to True otherwise curl -d @filename won't work
+            keep_blank_values=True,
+            # forcing the method otherwise it defaults to GET
             environ={'REQUEST_METHOD': 'POST'}
-            # environ=_env
         )
+        # now FieldStorage has parsed all the received uploads into the
+        # 'value' field
+        if len(f.value) == 0:
+            print("[*] No content supplied")
+            self.send_response(500)
+            return
+        for v in f.value:
+            if isinstance(v, cgi.MiniFieldStorage):
+                # this is for application/x-www-form-urlencoded
+                # just get the 'name' parameter and value
+                log.debug("Name: {}, Value: {}".format(v.name, repr(v.value)))
+                if v.value is None or v.value == '':
+                    log.debug("Blank value detected")
+                    # only the name was provided, which is the actual data
+                    fd, _name = tempfile.mkstemp(dir=os.getcwd())
+                    os.write(fd, bytearray(v.name, 'utf-8'))
+                    # isn't this a double open?
+                    # with open(_name, 'w') as f:
+                    #     f.write(v.name)
+                    os.close(fd)
+                else:
+                    _name = os.path.basename(v.name)
+                    while os.path.exists(_name):
+                        print("[*] File exists, not overwriting")
+                        _name += random.choice(string.digits)
+                        log.debug("Trying {}".format(_name))
+                    log.debug("Destination filename: {}".format(_name))
+                    # open as 'w' not 'wb' as v.value is a string
+                    with open(_name, 'w') as dst_file:
+                        dst_file.write(v.value)
+                print("[*] Data written to {}".format(_name))
 
-        print(dir(f))
-        print("Name: {}".format(f.name))
-        print("Fileanme: {}".format(f.filename))
-        print("File: {}".format(f.file))
-        print("Fp: {}".format(f.fp))
-        print("HEaders: {}".format(f.headers))
-        print("Value: {}".format(f.value))
-        print("len: {}".format(f.length))
-        # if it's multipart/form-data, it's a recursive upload.. CBA
-        print("qs: {}".format(f.qs_on_post))
-        print("Type: {}".format(f.type))
-        uploads = f.getlist('upload')
-        if len(uploads) > 0:
-            for u in uploads:
-                print("Upload: {}".format(repr(u)))
-
-        # with open('/tmp/stuff', 'wb') as g:
-        #     f.file.seek(0)
-        #     shutil.copyfileobj(f.file, g)
-
-        # ctype, pdict = cgi.parse_header(self.headers.get('content-type'))
-        # postvars = {}
-        # try:
-        #     if ctype == 'application/x-www-form-urlencoded':
-        #         length = int(self.headers.get('content-length'))
-        #         fields = cgi.parse_multipart(self.rfile, pdict)
-        #         content = fields.get('message')
-        #         print("Content: (len: {}) {}".format(length, content))
-        #         # postvars = cgi.parse_qs(self.rfile.read(length),
-        #         #         keep_blank_values=1)
-        #         # assert postvars.get('foo', '') != ['simulate error']
-        #     # body = 'Something'
-        #     # self.send_response(200)
-        #     # self.send_header("Content-type", "text")
-        #     # self.send_header("Content-length", str(len(body)))
-        #     # self.end_headers()
-        #     # self.wfile.write(body)
-        # except:
-        #     self.send_error(500)
-        #     raise
+            elif isinstance(v, cgi.FieldStorage):
+                # this is for multipart/form-data
+                # if v.type.lower() == 'application/octet-stream':
+                log.debug("octet-stream detected")
+                if v.filename is None:
+                    # make random name
+                    _name = tempfile.mktemp(dir=os.getcwd())
+                else:
+                    _name = os.path.basename(v.filename)
+                log.debug("Trying {}".format(_name))
+                while os.path.exists(_name):
+                    print("[*] File exists, not overwriting")
+                    _name += random.choice(string.digits)
+                    log.debug("Now trying {}".format(_name))
+                log.debug("Destination filename: {}".format(_name))
+                with open(_name, 'wb') as dst_file:
+                    shutil.copyfileobj(v.file, dst_file)
+                print("[*] Data written to {}".format(_name))
+                # elif v.type.lower() == 'text/plain':
+                #     # TODO
+                #     # same as before, but open('w') instead
+                #     print("hehe")
+                #     pass
+                # else:
+                #     print("Unrecognised content type: {}".format(v.type))
+                #     self.send_response(500)
+                #     return
+            else:
+                print("Something wrong in parsing content")
+                self.send_response(500)
+                return
+        print("All content parsed")
 
         self.send_response(301)
         self.send_header('Location', '/')
@@ -280,10 +258,13 @@ def main():
     # httpd = HTTPServer((ip, port), Handler)
     # inspired by: https://stackoverflow.com/a/10259265
     httpd = ForkingHTTPServer((ip, port), Handler)
-    print("[+] Server started, bound to {}:{}".format(ip, port))
     print("[*] use '?b64=1' in URL to encode as base64")
     print("[*] use '?key=xxx' in URL to XOR with key and encode as base64")
-    print("[*] open /upload for a basic upload form")
+    print("[*] Uploads:")
+    print("    open /upload for a basic upload form in a web browser")
+    print("    or use: curl http://..../upload -F upload=@file")
+    print("    or use: curl http://..../upload -d key=val")
+    print("[+] Server started, bound to {}:{}".format(ip, port))
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
