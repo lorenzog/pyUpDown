@@ -150,7 +150,10 @@ class Handler(SimpleHTTPRequestHandler):
         except OSError:
             self.send_error(HTTPStatus.NOT_FOUND, "File not found")
 
-    # test with: curl http://localhost:8080/upload' -F upload=@test.txt
+    # test with: 
+    # multipart/form-data: curl http://localhost:8080/upload' -F upload=@test.txt
+    # application/x-www-form-urlencoded: curl http://localhost:8080/upload' -d @test.txt
+    # perhaps worth to make this a CGI? https://docs.python.org/3/library/http.server.html#http.server.CGIHTTPRequestHandler
     def do_POST(self):
         print(self.headers)
         try:
@@ -168,44 +171,69 @@ class Handler(SimpleHTTPRequestHandler):
         print("boundary: {}".format(repr(_bound.get('boundary'))))
         cgip = cgi.parse_header(_ct)
         print("cgip: {}".format(cgip))
-        # mp = cgi.parse_multipart(self.rfile, cgip[1])
-        boundary_dict = {'boundary': bytes(cgip[1]['boundary'], 'ascii')}
-        tmp = NamedTemporaryFile(delete=False)
-        shutil.copyfileobj(self.rfile, tmp)
-        tmp.seek(0)
-        # mp = cgi.parse_multipart(self.rfile, boundary_dict)
-        mp = cgi.parse_multipart(tmp, boundary_dict)
-        print("Yea")
-        # mp = cgi.parse_multipart(self.rfile, _bound.get(str('boundary')))
-        # mp = cgi.parse_multipart(self.rfile, str(_ct))
-        # XXX
-        # trying to make sense of https://github.com/python/cpython/blob/3.6/Lib/cgi.py
-        print(dir(mp))
-        print(repr(mp))
-        print(mp.items())
-        self.send_response(301)
-        self.send_header('Location', '/')
-        self.end_headers()
-        return
+        # TODO if exists
+        if cgip[0].lower() == 'application/x-www-form-urlencoded':
+            print("Form urlencoded, do later")
+            self.send_response(200)
+            self.end_headers()
+            return
+        elif cgip[0].lower() == 'multipart/form-data':
+            print("Multipart form data")
+        else:
+            print("Nope")
+            return
 
-        if _ct is not None:
-            _ct = _ct[0]
+        # TODO make into functions, yadda yadda
 
+        # # XXX tried to read from file directly, no luck
+        # # mp = cgi.parse_multipart(self.rfile, cgip[1])
+
+        # boundary_dict = {'boundary': bytes(cgip[1]['boundary'], 'ascii')}
+        # # trying with a temporary file?
+        # # XXX nope. locks before parse_multipart
+        # tmp = NamedTemporaryFile(delete=False)
+        # shutil.copyfileobj(self.rfile, tmp)
+        # tmp.seek(0)
+        # # mp = cgi.parse_multipart(self.rfile, boundary_dict)
+        # mp = cgi.parse_multipart(tmp, boundary_dict)
+        # print("Yea")
+        # # mp = cgi.parse_multipart(self.rfile, _bound.get(str('boundary')))
+        # # mp = cgi.parse_multipart(self.rfile, str(_ct))
+        # # XXX
+        # # trying to make sense of https://github.com/python/cpython/blob/3.6/Lib/cgi.py
+        # print(dir(mp))
+        # print(repr(mp))
+        # print(mp.items())
+        # self.send_response(301)
+        # self.send_header('Location', '/')
+        # self.end_headers()
+        # return
+
+        # # figure it out later
+        # if _ct is not None:
+        #     _ct = _ct[0]
+
+        import os
+        _env = os.environ
+        _env['REQUEST_METHOD'] = self.command
         f = cgi.FieldStorage(
-            self.rfile, headers={
-                'content-type': _ct, 'content-length': _len})
+            fp=self.rfile, headers=self.headers,
+            environ=_env
+        )
+
         print(dir(f))
         print("Name: {}".format(f.name))
         print("Fileanme: {}".format(f.filename))
         print("File: {}".format(f.file))
+        print("Fp: {}".format(f.fp))
         print("HEaders: {}".format(f.headers))
         print("Value: {}".format(f.value))
         print("len: {}".format(f.length))
+        print("Data: {}".format(f.read()))
 
-        print("foo {}".format(f.filename.filename))
-        with open('/tmp/stuff', 'wb') as g:
-            f.file.seek(0)
-            shutil.copyfileobj(f.file, g)
+        # with open('/tmp/stuff', 'wb') as g:
+        #     f.file.seek(0)
+        #     shutil.copyfileobj(f.file, g)
 
         # ctype, pdict = cgi.parse_header(self.headers.get('content-type'))
         # postvars = {}
