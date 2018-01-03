@@ -178,10 +178,8 @@ class Handler(SimpleHTTPRequestHandler):
                     log.debug("Blank value detected")
                     # only the name was provided, which is the actual data
                     fd, _name = tempfile.mkstemp(dir=os.getcwd())
-                    os.write(fd, bytearray(v.name, 'utf-8'))
-                    # isn't this a double open?
-                    # with open(_name, 'w') as f:
-                    #     f.write(v.name)
+                    # assuming utf-8 is ok
+                    os.write(fd, bytearray(v.name, 'ascii'))
                     os.close(fd)
                 else:
                     _name = os.path.basename(v.name)
@@ -196,9 +194,16 @@ class Handler(SimpleHTTPRequestHandler):
                 print("[*] Data written to {}".format(_name))
 
             elif isinstance(v, cgi.FieldStorage):
+                # Accept every type of file and save it locally.
+                #
+                # If there are problems with the binary format, then
+                # discriminte using v.type as shown below
                 # this is for multipart/form-data
                 # if v.type.lower() == 'application/octet-stream':
-                log.debug("octet-stream detected")
+                # ... write content with open(_name, 'wb')
+                # elif v.type.lower() == 'text/plain':
+                # ... write content with open(_name, 'w')
+
                 if v.filename is None:
                     # make random name
                     _name = tempfile.mktemp(dir=os.getcwd())
@@ -207,21 +212,14 @@ class Handler(SimpleHTTPRequestHandler):
                 log.debug("Trying {}".format(_name))
                 while os.path.exists(_name):
                     print("[*] File exists, not overwriting")
+                    # this is a bit weird, re-uploading the same
+                    # file results in the same random digits?
                     _name += random.choice(string.digits)
                     log.debug("Now trying {}".format(_name))
                 log.debug("Destination filename: {}".format(_name))
                 with open(_name, 'wb') as dst_file:
                     shutil.copyfileobj(v.file, dst_file)
                 print("[*] Data written to {}".format(_name))
-                # elif v.type.lower() == 'text/plain':
-                #     # TODO
-                #     # same as before, but open('w') instead
-                #     print("hehe")
-                #     pass
-                # else:
-                #     print("Unrecognised content type: {}".format(v.type))
-                #     self.send_response(500)
-                #     return
             else:
                 print("Something wrong in parsing content")
                 self.send_response(500)
