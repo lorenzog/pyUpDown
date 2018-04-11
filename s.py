@@ -31,6 +31,7 @@ log.addHandler(sh)
 log.setLevel(logging.INFO)
 
 
+DEFAULT_MIME = "text/plain"
 UPLOAD_FORM = b'''
 <!doctype html>
 <title>Upload new File</title>
@@ -79,7 +80,7 @@ class Handler(SimpleHTTPRequestHandler):
             if mime is not None:
                 mime = mime[0]
             else:
-                mime = 'text/plain'
+                mime = DEFAULT_MIME
 
             b64 = True if query.get('b64') is not None else False
             log.debug("Base64: {}".format(b64))
@@ -258,6 +259,9 @@ def main():
     httpd = ForkingHTTPServer((ip, port), Handler)
     print("[*] use '?b64=1' in URL to encode as base64")
     print("[*] use '?key=xxx' in URL to XOR with key and encode as base64")
+    print("[*] use '?mime=xxx' in URL to download a file with "
+          "a specific mime type (e.g. application/octet-stream). "
+          "Default: {}".format(DEFAULT_MIME))
     print("[*] Uploads:")
     print("    open /upload for a basic upload form in a web browser")
     print("    or use: curl http://..../upload -F upload=@file")
