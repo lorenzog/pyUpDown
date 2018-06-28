@@ -42,6 +42,10 @@ UPLOAD_FORM = b'''
 </form>
 '''
 
+# defaults as globals
+CORS = None
+MIME = 'text/plain'
+
 
 def encode(key, what):
     # inspired by
@@ -75,11 +79,24 @@ class Handler(SimpleHTTPRequestHandler):
                 key = key[0]
                 log.debug("Encoding with: {}".format(key))
 
-            mime = query.get('mime')
-            if mime is not None:
-                mime = mime[0]
+            # override mime default, if present in query
+            _mime = query.get('mime')
+            if _mime is not None:
+                log.debug("Overriding MIME type with: {}".format(
+                    _mime[0]))
+                self.mime = _mime[0]
             else:
-                mime = 'text/plain'
+                # using global value
+                self.mime = MIME
+
+            # CORS
+            _cors = query.get('cors')
+            if _cors is not None:
+                log.debug("Overriding CORS with: {}".format(
+                    _cors[0]))
+                self.cors = _cors[0]
+            else:
+                self.cors = CORS
 
             b64 = True if query.get('b64') is not None else False
             log.debug("Base64: {}".format(b64))
@@ -92,8 +109,13 @@ class Handler(SimpleHTTPRequestHandler):
         log.debug("Path: {}".format(path))
         if path.endswith('/upload'):
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-type", "text/html")
+            # self.send_header("Content-type", "text/html")
+            self.send_header("Content-type", self.mime)
             self.send_header("Content-length", len(UPLOAD_FORM))
+            if self.cors is not None:
+                log.debug("Setting Access-Control-Allow-Origin "
+                          "header to: {}".format(self.cors))
+                self.send_header("Access-Control-Allow-Origin", self.cors)
             self.end_headers()
             stuff = io.BytesIO()
             stuff.write(UPLOAD_FORM)
@@ -118,7 +140,11 @@ class Handler(SimpleHTTPRequestHandler):
                     "Last-Modified",
                     self.date_time_string(fs.st_mtime))
                 # defaults to text/plain
-                self.send_header("Content-type", mime)
+                self.send_header("Content-type", self.mime)
+                if self.cors is not None:
+                    log.debug("Setting Access-Control-Allow-Origin "
+                              "header to: {}".format(self.cors))
+                    self.send_header("Access-Control-Allow-Origin", self.cors)
 
                 # encode
                 if key is not None:
@@ -244,6 +270,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--port', type=int, default=8080)
     parser.add_argument('-b', '--bind-to', default='0.0.0.0')
+    parser.add_argument('-c', '--cors', default=None,
+                        help="Set the Access-Control-Allow-Origin HTTP header")
+    parser.add_argument('-m', '--mime', default='text/html',
+                        help="Set the MIME type (Content-Type header)")
+
     parser.add_argument('-d', '--debug', action='store_true')
     args = parser.parse_args()
 
@@ -256,8 +287,21 @@ def main():
     # httpd = HTTPServer((ip, port), Handler)
     # inspired by: https://stackoverflow.com/a/10259265
     httpd = ForkingHTTPServer((ip, port), Handler)
+
+    # set defaults as globals, cuz of the double inheritance above it's a PITA
+    # to set them as object properties
+    if args.cors is not None:
+        log.debug("Setting default CORS to: {}".format(args.cors))
+        global CORS
+        CORS = args.cors
+    if args.mime is not None:
+        global MIME
+        MIME = args.mime
+
     print("[*] use '?b64=1' in URL to encode as base64")
     print("[*] use '?key=xxx' in URL to XOR with key and encode as base64")
+    print("[*] use '?mime=xxx' to set the Content-Type header")
+    print("[*] use '?cors=xxx' to set the Access-Control-Allow-Origin header")
     print("[*] Uploads:")
     print("    open /upload for a basic upload form in a web browser")
     print("    or use: curl http://..../upload -F upload=@file")
