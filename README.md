@@ -64,6 +64,12 @@ To run the whole thing over SSL, use `socat`:
 
  4. Connect to `https://localhost:8443`
 
+For socat with letsencrypt:
+
+```
+socat openssl-listen:443,fork,verify=0,cert=/etc/letsencrypt/live/yourhost/cert.pem,key=/etc/letsencrypt/live/yourhost/privkey.pem,reuseaddr tcp4:localhost:8080
+```
+
 ## Miscellanea
 
  Use the `-d` command-line flag for verbose debugging messages.
