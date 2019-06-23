@@ -45,6 +45,7 @@ UPLOAD_FORM = b'''
 # defaults as globals
 CORS = None
 MIME = 'text/plain'
+HEADERS = True
 
 
 def encode(key, what):
@@ -67,6 +68,8 @@ def encode(key, what):
 
 class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
+        if HEADERS:
+            log.info(self.headers)
         # get query and path
         try:
             u = urlparse(self.path)
