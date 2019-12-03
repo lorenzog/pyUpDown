@@ -9,6 +9,7 @@ from socketserver import ForkingMixIn
 import logging
 import os
 import random
+import re
 import shutil
 import string
 import sys
@@ -23,6 +24,7 @@ else:
 # logging?
 cgitb.enable()
 
+DEFAULT_AUTH_STRING = b"test:test"
 
 log = logging.getLogger(__name__)
 sh = logging.StreamHandler()
@@ -46,6 +48,7 @@ UPLOAD_FORM = b'''
 CORS = None
 MIME = 'text/plain'
 HEADERS = True
+AUTH_KEY = None
 
 
 def encode(key, what):
@@ -66,8 +69,54 @@ def encode(key, what):
     return ''.join(encoded_chars)
 
 
+def handle_auth(handler):
+    h = handler.headers.get("Authorization")
+    if h is None:
+        # no auth header
+        return None
+    log.debug("Matching {}".format(h))
+    m = re.match(r'^Basic (.+)$', h)
+    if m is None:
+        # invalid auth header
+        return None
+    auth_string = m.group(1)
+    if auth_string == '':
+        # no auth
+        return False
+    try:
+        decoded = base64.b64decode(auth_string)
+        log.debug("auth: {}".format(decoded))
+    except TypeError:
+        log.error("Invalid b64")
+        return False
+    log.debug("Expected: {}".format(repr(AUTH_KEY)))
+    if decoded != AUTH_KEY:
+        return False
+    return True
+
+
 class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
+        # auth first
+        if AUTH_KEY is not None:
+            is_auth = handle_auth(self)
+            if is_auth is False:
+                log.debug("Wrong auth")
+                self.send_response(401)
+                self.send_header('WWW-Authenticate', 'Basic realm=\"Test\"')
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                return
+            elif is_auth is None:
+                log.debug("No auth")
+                self.send_response(401)
+                self.send_header('WWW-Authenticate', 'Basic realm=\"Test\"')
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                return
+            else:
+                log.debug("Auth OK")
+
         if HEADERS:
             log.info(self.headers)
         # get query and path
@@ -277,6 +326,8 @@ def main():
                         help="Set the Access-Control-Allow-Origin HTTP header")
     parser.add_argument('-m', '--mime', default='text/html',
                         help="Set the MIME type (Content-Type header)")
+    parser.add_argument('-a', '--auth', default=DEFAULT_AUTH_STRING,
+                        help="Enable HTTP Basic Authentication (format: username:password)")
 
     parser.add_argument('-d', '--debug', action='store_true')
     args = parser.parse_args()
@@ -300,6 +351,10 @@ def main():
     if args.mime is not None:
         global MIME
         MIME = args.mime
+    if args.auth is not None:
+        global AUTH_KEY
+        print("[+] Setting authentication: {}".format(args.auth))
+        AUTH_KEY = bytes(args.auth, 'utf-8')
 
     print("[*] use '?b64=1' in URL to encode as base64")
     print("[*] use '?key=xxx' in URL to XOR with key and encode as base64")
