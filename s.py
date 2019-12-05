@@ -24,8 +24,6 @@ else:
 # logging?
 cgitb.enable()
 
-DEFAULT_AUTH_STRING = b"test:test"
-
 log = logging.getLogger(__name__)
 sh = logging.StreamHandler()
 sh.setFormatter(logging.Formatter())
@@ -326,7 +324,7 @@ def main():
                         help="Set the Access-Control-Allow-Origin HTTP header")
     parser.add_argument('-m', '--mime', default='text/html',
                         help="Set the MIME type (Content-Type header)")
-    parser.add_argument('-a', '--auth', default=DEFAULT_AUTH_STRING,
+    parser.add_argument('-a', '--auth',
                         help="Enable HTTP Basic Authentication (format: username:password)")
 
     parser.add_argument('-d', '--debug', action='store_true')
@@ -352,6 +350,7 @@ def main():
         global MIME
         MIME = args.mime
     if args.auth is not None:
+        repr(args.auth)
         global AUTH_KEY
         print("[+] Setting authentication: {}".format(args.auth))
         AUTH_KEY = bytes(args.auth, 'utf-8')
