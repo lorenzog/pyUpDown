@@ -10,6 +10,7 @@ import logging
 import os
 import random
 import re
+import ssl
 import shutil
 import string
 import sys
@@ -116,6 +117,7 @@ class Handler(SimpleHTTPRequestHandler):
                 log.debug("Auth OK")
 
         if HEADERS:
+            log.info(self.requestline)
             log.info(self.headers)
         # get query and path
         try:
@@ -326,6 +328,8 @@ def main():
                         help="Set the MIME type (Content-Type header)")
     parser.add_argument('-a', '--auth',
                         help="Enable HTTP Basic Authentication (format: username:password)")
+    parser.add_argument('-s', '--ssl', default='cert.pem',
+                        help='Enable SSL support')
 
     parser.add_argument('-d', '--debug', action='store_true')
     args = parser.parse_args()
@@ -339,6 +343,18 @@ def main():
     # httpd = HTTPServer((ip, port), Handler)
     # inspired by: https://stackoverflow.com/a/10259265
     httpd = ForkingHTTPServer((ip, port), Handler)
+
+    if args.ssl is not None:
+        try:
+            httpd.socket = ssl.wrap_socket(
+                httpd.socket,
+                certfile=args.ssl,
+                server_side=True)
+            log.info("SSL Support Enabled")
+        except FileNotFoundError as e:
+            log.error(str(e) + ": " + args.ssl)
+            _err = "\nTo generate a self-signed certificate, use\nopenssl req -x509 -newkey rsa:2048 -nodes -subj \"/CN=localhost\" -keyout cert.pem -out cert.pem -days 365\n"
+            raise SystemExit(_err)
 
     # set defaults as globals, cuz of the double inheritance above it's a PITA
     # to set them as object properties
@@ -366,6 +382,7 @@ def main():
     print("    or use: curl http://..../upload -F upload=@file")
     print("    or use: curl http://..../upload -d key=val")
     print("[+] Server started, bound to {}:{}".format(ip, port))
+    print("[+] Press CTRL-C to stop")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
