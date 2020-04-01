@@ -49,6 +49,8 @@ MIME = 'text/plain'
 HEADERS = True
 AUTH_KEY = None
 
+TRY_BINARY = False
+
 
 def encode(key, what):
     # inspired by
@@ -267,8 +269,22 @@ class Handler(SimpleHTTPRequestHandler):
                         log.debug("Trying {}".format(_name))
                     log.debug("Destination filename: {}".format(_name))
                     # open as 'w' not 'wb' as v.value is a string
-                    with open(_name, 'w') as dst_file:
-                        dst_file.write(v.value)
+                    try:
+                        if TRY_BINARY is False:
+                            # default: 'w' for this branch
+                            _write_mode = 'w'
+                        else:
+                            # try 'wb'
+                            _write_mode = 'wb'
+                        with open(_name, _write_mode) as dst_file:
+                            dst_file.write(v.value)
+                    except TypeError as e:
+                        print(e)
+                        print(
+                            "if error is TypeError: write() argument "
+                            "must be str, not bytes\n"
+                            " then try with the --binary command-line"
+                            " parameter")
                 print("[*] Data written to {}".format(_name))
 
             elif isinstance(v, cgi.FieldStorage):
@@ -295,8 +311,21 @@ class Handler(SimpleHTTPRequestHandler):
                     _name += random.choice(string.digits)
                     log.debug("Now trying {}".format(_name))
                 log.debug("Destination filename: {}".format(_name))
-                with open(_name, 'wb') as dst_file:
-                    shutil.copyfileobj(v.file, dst_file)
+                try:
+                    if TRY_BINARY is False:
+                        # default: 'wb' for this branch
+                        _write_mode = 'wb'
+                    else:
+                        # try 'w'
+                        _write_mode = 'w'
+                    with open(_name, 'wb') as dst_file:
+                        shutil.copyfileobj(v.file, dst_file)
+                except TypeError as e:
+                    print(e)
+                    print("if error is TypeError: write() argument "
+                          "must be str, not bytes\n"
+                          " then try with the --binary command-line"
+                          " parameter")
                 print("[*] Data written to {}".format(_name))
             else:
                 print("Something wrong in parsing content")
@@ -327,11 +356,14 @@ def main():
     parser.add_argument('-m', '--mime', default='text/html',
                         help="Set the MIME type (Content-Type header)")
     parser.add_argument('-a', '--auth',
-                        help="Enable HTTP Basic Authentication (format: username:password)")
+                        help=("Enable HTTP Basic Authentication "
+                              "(format: username:password)"))
     parser.add_argument('-s', '--ssl', default='cert.pem',
                         help='Enable SSL support')
 
     parser.add_argument('-d', '--debug', action='store_true')
+    parser.add_argument('--binary', action='store_true',
+                        help="Force binary file write")
     args = parser.parse_args()
 
     if args.debug:
@@ -353,7 +385,10 @@ def main():
             log.info("SSL Support Enabled")
         except FileNotFoundError as e:
             log.error(str(e) + ": " + args.ssl)
-            _err = "\nTo generate a self-signed certificate, use\nopenssl req -x509 -newkey rsa:2048 -nodes -subj \"/CN=localhost\" -keyout cert.pem -out cert.pem -days 365\n"
+            _err = ("\nTo generate a self-signed certificate, "
+                    "use\nopenssl req -x509 -newkey rsa:2048 "
+                    "-nodes -subj \"/CN=localhost\" -keyout "
+                    "cert.pem -out cert.pem -days 365\n")
             raise SystemExit(_err)
 
     # set defaults as globals, cuz of the double inheritance above it's a PITA
@@ -370,6 +405,10 @@ def main():
         global AUTH_KEY
         print("[+] Setting authentication: {}".format(args.auth))
         AUTH_KEY = bytes(args.auth, 'utf-8')
+    if args.binary is True:
+        global TRY_BINARY
+        TRY_BINARY = True
+        print("[+] Forcing binary file write")
 
     print("[*] use '?b64=1' in URL to encode as base64")
     print("[*] use '?key=xxx' in URL to XOR with key and encode as base64")
@@ -379,8 +418,10 @@ def main():
           "Default: {}".format(MIME))
     print("[*] Uploads:")
     print("    open /upload for a basic upload form in a web browser")
-    print("    or use: curl http://..../upload -F upload=@file")
-    print("    or use: curl http://..../upload -d key=val")
+    print("    or use: curl -u username:pass http://..../upload -F "
+          "upload=@file")
+    print("    or use: curl -u username:pass http://..../upload -d "
+          "key=val")
     print("[+] Server started, bound to {}:{}".format(ip, port))
     print("[+] Press CTRL-C to stop")
     try:
