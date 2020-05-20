@@ -358,7 +358,7 @@ def main():
     parser.add_argument('-a', '--auth',
                         help=("Enable HTTP Basic Authentication "
                               "(format: username:password)"))
-    parser.add_argument('-s', '--ssl', default='cert.pem',
+    parser.add_argument('-s', '--ssl', action='store_true',
                         help='Enable SSL support')
 
     parser.add_argument('-d', '--debug', action='store_true')
@@ -376,7 +376,7 @@ def main():
     # inspired by: https://stackoverflow.com/a/10259265
     httpd = ForkingHTTPServer((ip, port), Handler)
 
-    if args.ssl is not None:
+    if args.ssl:
         try:
             httpd.socket = ssl.wrap_socket(
                 httpd.socket,
