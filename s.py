@@ -48,6 +48,7 @@ CORS = None
 MIME = 'text/plain'
 HEADERS = True
 AUTH_KEY = None
+DEFAULT_INDEX = None
 
 TRY_BINARY = False
 
@@ -180,11 +181,15 @@ class Handler(SimpleHTTPRequestHandler):
             what = self.translate_path(path)
 
         stuff = None
-        if os.path.isdir(what):
-            stuff = self.list_directory(what)
-            if stuff is not None:
-                shutil.copyfileobj(stuff, self.wfile)
-            return
+
+        if DEFAULT_INDEX is not None:
+            what = DEFAULT_INDEX
+        else:
+            if os.path.isdir(what):
+                stuff = self.list_directory(what)
+                if stuff is not None:
+                    shutil.copyfileobj(stuff, self.wfile)
+                return
 
         try:
             with open(what, 'rb') as f:
@@ -364,6 +369,7 @@ def main():
     parser.add_argument('-d', '--debug', action='store_true')
     parser.add_argument('--binary', action='store_true',
                         help="Force binary file write")
+    parser.add_argument('--default-index')
     args = parser.parse_args()
 
     if args.debug:
@@ -409,6 +415,10 @@ def main():
         global TRY_BINARY
         TRY_BINARY = True
         print("[+] Forcing binary file write")
+    if args.default_index is not None:
+        global DEFAULT_INDEX
+        DEFAULT_INDEX = args.default_index
+        print("[+] Default index: {}".format(args.default_index))
 
     print("[*] use '?b64=1' in URL to encode as base64")
     print("[*] use '?key=xxx' in URL to XOR with key and encode as base64")
